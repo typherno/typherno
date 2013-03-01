@@ -1,5 +1,12 @@
 *.py[cod]
 
+# joe
+DEADJOE
+*~
+
+# mac
+.DS_Store
+
 # C extensions
 *.so
 

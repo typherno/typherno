@@ -1,0 +1,7 @@
+#!/bin/sh
+
+python joinfs_helper.py $1 $2 | while read -r line
+do
+    echo subscriber.py $line $3
+    python subscriber.py $line $3 &
+done
