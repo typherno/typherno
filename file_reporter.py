@@ -8,6 +8,7 @@ import struct
 import os
 import sys
 import random
+import time
 
 from typherno_common import *
 
@@ -160,6 +161,7 @@ class reporter_socket(msg_socket):
 		self.prefix = prefix
 		self.bufsize = bufsize
 
+		self.total_bytes = 0
 		self.len_bytes = 0
 
 	def tell(self):
@@ -194,6 +196,7 @@ class reporter_socket(msg_socket):
 	def append(self, data):
 		self.send(raw_msg(data, DATA, 1))
 		self.len_bytes += len(data)
+		self.total_bytes += len(data)
 
 	def cancel(self):
 		self.send(cmd_msg(1, "Abort"))
@@ -271,14 +274,20 @@ class reporter_socket(msg_socket):
 	def main(self, host, port, pathlist):
 		self._print("Connecting to %s:%d ... " % (host, port))
 		self.connect((host, port))
+		starttime = time.time()
 		for path in pathlist:
 			try:
 				self.write_path(path)
 			except Exception, err:
 				self._print(err)
 		self.close()
-		self._print("Closed connection to %s" % host)
-
+		elapsed = time.time() - starttime
+		bytes = self.total_bytes
+		if elapsed:
+			rate = float(bytes) / elapsed
+			self._print("Closed connection, uploaded %s in %d seconds (%s/s)" % (mb_str(bytes), elapsed, mb_str(rate, 3)))
+		else:
+			self._print("Closed connection, uploaded %s" % mb_str(bytes))
 
 
 def weighted_accumulators(host):
