@@ -263,7 +263,6 @@ class reporter_socket(msg_socket):
 	def write_path(self, path):
 		if os.path.isdir(path):
 			for cpath, dirs, files in os.walk(path):
-				parent = ''.join([self.prefix, cpath])
 				for name in files:
 					self.write_file(os.path.join(cpath, name))
 		else:
