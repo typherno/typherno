@@ -940,7 +940,7 @@ class http_handler(asyncore.dispatcher_with_send, BaseHTTPRequestHandler):
 
 		self.bytes = ''
 
-	def reply(self, http, content):
+	def reply_content(self, http, content):
 		type = "plain"
 		if content.startswith("<html>"):
 			type = "html"
@@ -950,7 +950,7 @@ class http_handler(asyncore.dispatcher_with_send, BaseHTTPRequestHandler):
 		self.out_buffer = ''.join([http, header, content])
 
 	def reply_OK(self, content):
-		self.reply(http_OK, content)
+		self.reply_content(http_OK, content)
 
 	def reply_lines(self, lines):
 		self.reply_OK("\r\n".join([line for line in lines] + ['', '']))
@@ -992,7 +992,7 @@ class http_handler(asyncore.dispatcher_with_send, BaseHTTPRequestHandler):
 				return self.URLs[url](self)
 
 		print "%s not found" % self.path
-		self.reply("HTTP/1.1 404 Not Found\r\n", http_404 % self.path)
+		self.reply_content("HTTP/1.1 404 Not Found\r\n", http_404 % self.path)
 
 	def handle_write(self):
 		asyncore.dispatcher_with_send.handle_write(self)

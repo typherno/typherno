@@ -121,7 +121,7 @@ class segment_state:
 
 
 
-class stuff(subscriber_handler):
+class metadata_publisher(subscriber_handler):
 	def __init__(self, *sockargs):
 		subscriber_handler.__init__(self, *sockargs)
 
@@ -292,7 +292,7 @@ def fs_abort_all(prior, segments, piece_length):
 				yield m
 
 
-class metadata_handler(stuff):
+class metadata_handler(metadata_publisher):
 	def got_info(self):
 		self._print("%s %s: %s" % (self.peer_uuid, self.peer_role, repr(self.peer_info)))
 		if self.peer_role == "Subscriber":
@@ -439,14 +439,14 @@ class metadata_handler(stuff):
 
 	handlers = { \
 		CTL:		ctl_router, \
-		SET:		stuff.cmd_router, \
+		SET:		metadata_publisher.cmd_router, \
 
 		ENTRY:		entry, \
 		DATA:		log_seq, }
 
 	def handle_write(self):
 		try:
-			stuff.handle_write(self)
+			metadata_publisher.handle_write(self)
 		except Exception, err:
 			self._print(err)
 
@@ -470,11 +470,11 @@ class metadata_handler(stuff):
 		if self in fs.handlers:
 			fs.handlers.remove(self)
 
-		stuff.handle_close(self)
+		metadata_publisher.handle_close(self)
 
 
 
-class status_request_handler(http_handler):
+class tracker_status_handler(http_handler):
 	def get_ar(self, uuid):
 		if uuid == subscription.fs_uuid:
 			return None
@@ -926,7 +926,7 @@ def fs_main(min_repl, fs_uuid, fs_name):
 	s = y = None
 	try:
 		s = accumulator_server(metadata_handler, '', 9825)
-		y = accumulator_server(status_request_handler, '', 4352)
+		y = accumulator_server(tracker_status_handler, '', 4352)
 		asyncore.loop()
 	finally:
 		s and s.close()
@@ -934,11 +934,11 @@ def fs_main(min_repl, fs_uuid, fs_name):
 		print "Done listening"
 
 
-def ar_main(min_repl, ar_uuid, fs_host, seg_width, seg_size):
+def da_main(min_repl, da_uuid, fs_host, seg_width, seg_size):
 	global subscription
 
 	subscription = accumulator_queue(min_repl, seg_width, seg_size, AR_WRITE_MAX)
-	subscription.fs_queue = tracker_queue_handler(ar_uuid, fs_host, 9825)
+	subscription.fs_queue = tracker_queue_handler(da_uuid, fs_host, 9825)
 
 	s = None
 	try:
@@ -959,13 +959,13 @@ def ar_main(min_repl, ar_uuid, fs_host, seg_width, seg_size):
 		subscription.fs_queue.close()
 
 
-def do_ar(cmd, repl, host, seg_width, seg_megs):
+def do_da(cmd, repl, host, seg_width, seg_megs):
 	repl = int(repl.strip('x'))
 	if '@' in host:
-		ar_uuid, host = host.split('@')
-		ar_uuid = str(uuid.UUID(ar_uuid))
+		da_uuid, host = host.split('@')
+		da_uuid = str(uuid.UUID(da_uuid))
 	else:
-		ar_uuid = str(uuid.uuid4())
+		da_uuid = str(uuid.uuid4())
 
 	seg_width = int(seg_width.strip('w'))
 	seg_bytes = int(seg_megs.strip('mMBb')) * 2**20
@@ -974,7 +974,7 @@ def do_ar(cmd, repl, host, seg_width, seg_megs):
 		seg_width = AR_SEGMENT_CAP
 
 	try:
-		ar_main(repl, ar_uuid, host, seg_width, seg_bytes)
+		da_main(repl, da_uuid, host, seg_width, seg_bytes)
 	except:
 		pass
 
@@ -1001,5 +1001,5 @@ if __name__ == "__main__":
 	elif len(args) < 5:
 		do_fs(*args)
 	else:
-		do_ar(*args)
+		do_da(*args)
 
