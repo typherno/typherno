@@ -1,7 +1,11 @@
 #!/bin/sh
 
-python joinfs_helper.py $1 $2 | while read -r line
+#PYCMD="/cygdrive/c/Python27/python.exe"
+PYCMD="python"
+
+$PYCMD joinfs_helper.py $1 $2 | while read -r line
 do
     echo subscriber.py $line $3
-    python subscriber.py $line $3 &
+    $PYCMD subscriber.py $line $3 &
 done
+
