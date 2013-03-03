@@ -252,7 +252,7 @@ class metadata_publisher(subscriber_handler):
 			yield d
 
 	def readable(self):
-		return not self.issue and not self.reply and self.ready
+		return not self.issue and not self.reply
 
 	def super_fields(self):
 		yield " - typherno archive -"
@@ -773,7 +773,7 @@ class publisher_handler(subscriber_handler):
 		self.dispatch()
 
 	def readable(self):	# hot
-		return not self.issue and not self.reply and self.ready and subscription.fs_uuid
+		return not self.issue and not self.reply and subscription.fs_uuid
 
 
 

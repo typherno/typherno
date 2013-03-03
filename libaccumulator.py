@@ -763,8 +763,6 @@ class msg_handler(asyncore.dispatcher_with_send):
 		self.bytes_expected = None
 		self.chunks = []
 
-		self.ready = False
-
 	def protocol_error(self, err):
 		print format_exc()
 		raise
@@ -774,7 +772,6 @@ class msg_handler(asyncore.dispatcher_with_send):
 
 	def handle_connect(self):
 		self.send(HANDSHAKE)
-		self.ready = True
 
 	def got_info(self):
 		pass
@@ -924,7 +921,6 @@ class msg_handler(asyncore.dispatcher_with_send):
 
 	def handle_close(self):
 		self.close()
-		self.ready = False
 
 
 
