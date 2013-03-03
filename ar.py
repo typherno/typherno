@@ -949,6 +949,14 @@ def fs_main(min_repl, fs_uuid, fs_name):
 def da_main(min_repl, da_uuid, fs_host, seg_width, seg_size):
 	global subscription
 
+	for p in range(9826, 9842):
+		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		err = s.connect_ex(("127.0.0.1", p))
+		if err:
+			port = p
+			break
+		s.close()
+
 	subscription = accumulator_queue(min_repl, seg_width, seg_size, AR_WRITE_MAX)
 	subscription.fs_queue = tracker_queue_handler(da_uuid, fs_host, 9825)
 
@@ -956,13 +964,7 @@ def da_main(min_repl, da_uuid, fs_host, seg_width, seg_size):
 	try:
 		subscription.fs_queue.connect()
 
-		for port in range(9826, 9842):
-			try:
-				s = accumulator_server(accumulator_handler, '', port)
-				break
-			except socket.error, err:
-				if port == 9834:
-					raise
+		s = accumulator_server(accumulator_handler, '', port)
 
 		subscription.ar_port = port
 		asyncore.loop()
