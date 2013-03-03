@@ -771,7 +771,7 @@ class msg_handler(asyncore.dispatcher_with_send):
 		asyncore.dispatcher_with_send.connect(self, (self.remote_host, self.remote_port))
 
 	def handle_connect(self):
-		self.send(HANDSHAKE)
+		self.out(HANDSHAKE)
 
 	def got_info(self):
 		pass
