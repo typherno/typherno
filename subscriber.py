@@ -15,13 +15,9 @@
 #
 #
 
-import socket
-import struct
 import os
+import sys
 import time
-
-from typherno_common import *
-from file_reporter import msg_socket
 
 import platform		# v2.3
 try:
@@ -29,11 +25,13 @@ try:
 except:
 	ctypes = None
 
+from typherno_common import *
+import libmsg
 
 
-class subscriber_socket(msg_socket):
+class subscriber_socket(libmsg.msg_socket):
 	def __init__(self, path, uuid, provider, raw_cap, avail_cap):
-		msg_socket.__init__(self)
+		libmsg.msg_socket.__init__(self)
 
 		self.path = path
 		self.uuid = uuid
@@ -121,7 +119,7 @@ class subscriber_socket(msg_socket):
 			self.handler(*self.get_msg())
 
 	def close(self):
-		msg_socket.close(self)
+		libmsg.msg_socket.close(self)
 
 		for f in self.handles.values():
 			f.close()
@@ -157,7 +155,6 @@ def main(host, port, path, uuid, provider, raw_cap, avail_cap):
 
 
 if __name__ == "__main__":
-	import sys
 	if len(sys.argv) < 3 or ':' not in sys.argv[1]:
 		print "subscriber.py host:port path [provider]"
 		sys.exit()
