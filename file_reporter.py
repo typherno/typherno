@@ -59,13 +59,12 @@ class reporter_socket(libmsg.msg_socket):
 
 		x = None
 		self._print("--- %s Status ---" % self.peer_role)
-		for s in unpack_seq(self.recv_msg()[1:])[1:]:
+		for s in self.get_ctl_seq()[1:]:
 			if x:
-				self._print("%s:\t%s" % (s, x))
+				self._print("  %s:\t%s" % (s, x))
 				x = None
 			else:
 				x = s
-		self._print('')
 
 		self.send(cmd_msg(1, "Provision"))
 		self.expect_reply("Ok")

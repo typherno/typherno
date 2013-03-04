@@ -57,14 +57,15 @@ class subscriber_socket(libmsg.msg_socket):
 		self._print("Subcribing: %s capacity" % mb_str(cap))
 		self.send(ctl_msg(self.uuid, self.role, "Info", str(cap), "Raw Capacity"))
 
-	def status(self, ctl_str):
+	def status(self, chunks):
 		cap = self.avail_cap
 		self._print("Status: %s available" % mb_str(cap))
 		self.send(ctl_msg("Status", str(cap), "Available Capacity", self.provider, "Provider"))
 
-	def provision(self, channel, offset, name):
+	def provision(self, channel, offset, chunks):
 		if channel in self.handles:
 			raise RuntimeError("Ch %d - already provisioned" % channel)
+		name = ''.join(chunks)
 		if os.sep != '/':
 			name = name.replace('/', os.sep)
 
@@ -76,25 +77,29 @@ class subscriber_socket(libmsg.msg_socket):
 
 		self.handles[channel] = f
 
-	def data(self, channel, data=''):
+	def data(self, channel, chunks):
 		handle = self.handles[channel]
-		if data:
+		bytes = 0
+		for data in chunks:
 			handle.write(data)
 			handle.flush()
+			bytes += len(data)
 
-		self._print("Ch %d - wrote %d" % (channel, len(data)))
+		self._print("Ch %d - wrote %d" % (channel, bytes))
 
-	def data_ack(self, channel, cookie, data=''):
+	def data_ack(self, channel, cookie, chunks):
 		handle = self.handles[channel]
-		if data:
+		bytes = 0
+		for data in chunks:
 			handle.write(data)
 			handle.flush()
+			bytes += len(data)
 		os.fsync(handle.fileno())
 
-		self._print("Ch %d - wrote %d, replying Ack cookie %d" % (channel, len(data), cookie))
+		self._print("Ch %d - wrote %d, replying Ack cookie %d" % (channel, bytes, cookie))
 		self.send(ctl_msg(str(cookie), "Ack"))
 
-	def reclaim(self, channel):
+	def reclaim(self, channel, chunks):
 		if channel not in self.handles:
 			raise RuntimeError("Ch %d - not provisioned" % channel)
 
