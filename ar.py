@@ -175,63 +175,66 @@ class metadata_publisher(subscriber_handler):
 			return 0
 		return int(self.peer_status["Available Capacity"])
 
+	def da_subscribers(self):
+		for p in self.data_peers:
+			if p.role == "Subscriber":
+				yield p
+
+	def da_repl(self):
+		return len([s for s in self.da_subscribers()])
+
+	def caplist_field(self):
+		caplist = [s.avail_cap() for s in self.da_subscribers()]
+		caplist.sort()
+		min_repl = int(self.peer_info["Minimum Replication Factor"])
+		if len(caplist) > min_repl:
+			return "%s-%s" % (mb_str(caplist[0]), mb_str(caplist[-min_repl]))
+		if len(caplist) == min_repl:
+			return mb_str(caplist[0])
+		return "0MB"
+
+	def relative_local_host(self, local_host, query_host):
+		port = self.peer_info["TCP Port"]
+		if self.remote_host == query_host:
+			return ':'.join(("127.0.0.1", port))
+		if self.remote_host == "127.0.0.1":
+			return ':'.join((local_host, port))
+		return ':'.join((self.remote_host, port))
+
 	def upload_ready(self):
-		if len(self.data_peers) < int(self.peer_info["Minimum Replication Factor"]):
+		if self.da_repl() < int(self.peer_info["Minimum Replication Factor"]):
 			return False
 
 		acqrd = sum(1 for s in self.segments if s.connection)
 		return acqrd < int(self.peer_info["Maximum Concurrent Segments"])
 
-	def upload_fields(self, query_host):
+	def upload_fields(self, local_host, query_host):
 		info = self.peer_info
 
-		port = info["TCP Port"]
-		if self.remote_host == query_host:
-			yield ':'.join(("127.0.0.1", port))
-		elif self.remote_host == "127.0.0.1":
-			yield ':'.join((query_host, port))
-		else:
-			yield ':'.join((self.remote_host, port))
-
+		yield self.relative_local_host(local_host, query_host)
 		acqrd = sum(1 for s in self.segments if s.connection)
 		yield "%d/%sw" % (acqrd, info["Maximum Concurrent Segments"])
-		yield "%s/%sx" % (len(self.data_peers), info["Minimum Replication Factor"])
+		yield "%s/%sx" % (self.da_repl(), info["Minimum Replication Factor"])
+		yield self.caplist_field()
 		yield "%dMB" % (int(info["Segment Length"]) / 2**20)
 		yield self.peer_uuid
 
-	def accumulator_fields(self, query_host):
+	def accumulator_fields(self, local_host, query_host):
 		info = self.peer_info
-		status = self.peer_status
 
 		yield self.peer_uuid
 		yield uptime_str(self.starttime)
-		yield "%s/%sx" % (len(self.data_peers), info["Minimum Replication Factor"])
+		yield "%d/%sx" % (self.da_repl(), info["Minimum Replication Factor"])
 		yield "%14d" % self.bytes_done
 		yield str(self.segments_done)
-
 		upldg = sum(1 for s in self.segments if s.modepath)
 		cmsnd = sum(1 for s in self.segments if s.segname)
 		yield "%d/%d" % (upldg, cmsnd)
 		acqrd = sum(1 for s in self.segments if s.connection)
 		yield "%d/%sw" % (acqrd, info["Maximum Concurrent Segments"])
-
-		caplist = [s.avail_cap() for s in self.data_peers if s.avail_cap()]
-		caplist.sort()
-		if len(caplist) > subscription.min_repl:
-			yield "%s-%s" % (mb_str(caplist[0]), mb_str(caplist[-subscription.min_repl]))
-		elif len(caplist) == subscription.min_repl:
-			yield mb_str(caplist[0])
-		else:
-			yield "0MB"
-
+		yield self.caplist_field()
 		yield "%dMB" % (int(info["Segment Length"]) / 2**20)
-		port = info["TCP Port"]
-		if self.remote_host == query_host:
-			yield ':'.join(("127.0.0.1", port))
-		elif self.remote_host == "127.0.0.1":
-			yield ':'.join((query_host, port))
-		else:
-			yield ':'.join((self.remote_host, port))
+		yield self.relative_local_host(local_host, query_host)
 
 	def subscriber_fields(self):
 		yield self.peer_uuid
@@ -278,9 +281,8 @@ class metadata_publisher(subscriber_handler):
 			yield digest
 		yield ''
 		yield " - featuring disks -"
-		for c in self.data_peers:
-			if c.role == "Subscriber":
-				yield c.uuid
+		for s in self.da_subscribers():
+			yield s.uuid
 		yield ''
 		yield ''
 
@@ -467,9 +469,8 @@ class metadata_handler(metadata_publisher):
 		self._print("Closing %s" % repr(self))
 
 		if self.peer_role == "Accumulator Reporter":
-			for c in self.data_peers:
-				if c.role == "Subscriber":
-					fs.disk_map_put(c.uuid, c)
+			for s in self.da_subscribers():
+				fs.disk_map_put(s.uuid, s)
 			count = int(self.peer_info["Maximum Concurrent Segments"])
 			segs = [self.channel_map[i+1] for i in range(count)]
 			prior = self.issue
@@ -506,7 +507,7 @@ class tracker_status_handler(http_handler):
 	def ar_subscribers(self, uuid):
 		ar = self.get_ar(uuid)
 		if ar is not None:
-			self.reply_lines('\t'.join(s.subscriber_fields()) for s in ar.data_peers if s.role == "Subscriber")
+			self.reply_lines('\t'.join(s.subscriber_fields()) for s in ar.da_subscribers())
 		else:
 			self.reply_lines('\t'.join(s.subscriber_fields()) for s in subscription)
 
@@ -519,13 +520,13 @@ class tracker_status_handler(http_handler):
 		self.reply_lines('\t'.join(disk.uptime_fields()) for disk in tracker.disks)
 
 	def upload(self):
-		host = self.getsockname()[0]
-		self.reply_lines('\t'.join(ar.upload_fields(host)) for ar in tracker.handlers if ar.upload_ready())
+		local_host = self.getsockname()[0]
+		self.reply_lines('\t'.join(ar.upload_fields(local_host, self.remote_host)) for ar in tracker.handlers if ar.upload_ready())
 
 	def accumulators(self):
-		host = self.getsockname()[0]
+		local_host = self.getsockname()[0]
 		a = ['\t'.join(tracker.uptime_fields(subscription))]
-		a.extend('\t'.join(ar.accumulator_fields(host)) for ar in tracker.handlers)
+		a.extend('\t'.join(ar.accumulator_fields(local_host, self.remote_host)) for ar in tracker.handlers)
 		self.reply_lines(a)
 
 	def providers(self):
