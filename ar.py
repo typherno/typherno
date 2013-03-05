@@ -126,10 +126,12 @@ class segment_state:
 		yield uptime_str(self.starttime)
 		yield str(self.bin_offset)
 		if self.connection:
-			yield "%s:%s" % (self.connection.host, self.connection.port)
+			da = self.connection
+			yield da.uuid
+			yield "%s:%s" % (da.host, da.port)
+			yield self.modepath
 		else:
 			yield "<ready>"
-		yield self.modepath
 
 
 
@@ -200,6 +202,10 @@ class metadata_publisher(subscriber_handler):
 		if self.remote_host == "127.0.0.1":
 			return ':'.join((local_host, port))
 		return ':'.join((self.remote_host, port))
+
+	def subscriber_lines(self):
+		for s in self.da_subscribers():
+			yield '\t'.join(s.subscriber_fields())
 
 	def upload_ready(self):
 		if self.da_repl() < int(self.peer_info["Minimum Replication Factor"]):
@@ -488,58 +494,80 @@ class metadata_handler(metadata_publisher):
 
 
 class tracker_status_handler(http_handler):
-	def get_ar(self, uuid):
-		if uuid == subscription.fs_uuid:
-			return None
-		for ar in tracker.handlers:
-			if uuid == ar.peer_uuid:
-				return ar
-		raise RuntimeError("accumulator %s not found" % uuid)
+	def segments(self):
+		self.reply_lines(tracker.segment_lines())
 
-	def ar_segments(self, uuid):
-		ar = self.get_ar(uuid)
-		self.reply_lines('\t'.join(seg.uptime_fields()) for seg in ar.segments if seg.segname)
-
-	def ar_reporters(self, uuid):
-		ar = self.get_ar(uuid)
-		self.reply_lines('\t'.join(r.reporter_fields()) for r in ar.data_peers if r.role != "Subscriber")
-
-	def ar_subscribers(self, uuid):
-		ar = self.get_ar(uuid)
-		if ar is not None:
-			self.reply_lines('\t'.join(s.subscriber_fields()) for s in ar.da_subscribers())
-		else:
-			self.reply_lines('\t'.join(s.subscriber_fields()) for s in subscription)
-
-	ar_handlers = { \
-		"/Segments":		ar_segments, \
-		"/Reporters":		ar_reporters, \
-		"/Subscribers":		ar_subscribers, }
+	def reporters(self):
+		self.reply_lines(tracker.reporter_lines())
 
 	def disks(self):
-		self.reply_lines('\t'.join(disk.uptime_fields()) for disk in tracker.disks)
+		local_host = self.getsockname()[0]
+		self.reply_lines(tracker.disk_lines(local_host, self.remote_host))
 
 	def upload(self):
 		local_host = self.getsockname()[0]
-		self.reply_lines('\t'.join(ar.upload_fields(local_host, self.remote_host)) for ar in tracker.handlers if ar.upload_ready())
+		self.reply_lines(tracker.upload_lines(local_host, self.remote_host))
 
 	def accumulators(self):
-		local_host = self.getsockname()[0]
-		a = ['\t'.join(tracker.uptime_fields(subscription))]
-		a.extend('\t'.join(ar.accumulator_fields(local_host, self.remote_host)) for ar in tracker.handlers)
-		self.reply_lines(a)
+		self.reply_lines(self.accumulator_lines())
 
 	def providers(self):
-		self.reply_lines('\t'.join(s.subscriber_fields()) for s in subscription if s.peer_status["Provider"])
+		self.reply_lines(subscription.provider_lines())
+
+	def status(self):
+		self.reply_lines(self.status_lines())
 
 	URLs = { \
-		"/Segments":		http_handler.ar_router, \
-		"/Reporters":		http_handler.ar_router, \
-		"/Subscribers":		http_handler.ar_router, \
+		"/Segments":		segments, \
+		"/Reporters":		reporters, \
 		"/Disks":		disks, \
 		"/Upload":		upload, \
 		"/Accumulators":	accumulators, \
-		"/Providers":		providers, }
+		"/Providers":		providers, \
+		"/Status":		status, }
+
+	def subscribers(self, uuid):
+		if not uuid or uuid == subscription.fs_uuid:
+			return self.reply_lines(subscription.subscriber_lines())
+		for h in tracker.handlers:
+			if h.peer_uuid == uuid:
+				return self.reply_lines(h.subscriber_lines())
+		self.reply_OK("No such accumulator %s" % uuid)
+
+	def http_request(self):
+		if self.path in self.URLs:
+			return self.URLs[self.path](self)
+		if self.path == '/':
+			return self.status()
+		if self.path.startswith("/Subscribers"):
+			query = self.path[1:]
+			if '/' not in query:
+				return self.reply_OK("Use /Subscribers/[accumulator_uuid]\r\n")
+			dir, uuid = query.split('/')
+			return self.subscribers(uuid)
+		self.reply_content("HTTP/1.1 404 Not Found\r\n", http_404 % self.path)
+
+	def status_lines(self):
+		yield "--- Accumulators ---"
+		for l in self.accumulator_lines():
+			yield l
+		yield "\r\n--- Disks ---"
+		for l in tracker.disk_lines():
+			yield l
+		yield "\r\n--- Segments ---"
+		for l in tracker.segment_lines():
+			yield l
+		yield "\r\n--- Reporters ---"
+		for l in tracker.reporter_lines():
+			yield l
+
+	def accumulator_lines(self):
+		local_host = self.getsockname()[0]
+		s = subscription
+		repl = s.replication_factor()
+		yield '\t'.join(tracker.uptime_fields(s.fs_uuid, repl, s.min_repl))
+		for l in tracker.accumulator_lines(local_host, self.remote_host):
+			yield l
 
 
 

@@ -105,9 +105,10 @@ class connection_state:
 			return 0
 		return int(self.status["Available Capacity"])
 
-	def reporter_fields(self):
+	def reporter_fields(self, da):
 		yield "%s:%s" % (self.host, self.port)
 		yield uptime_str(self.starttime)
+		yield da
 		if self.role:
 			yield self.role
 		if self.uuid:
@@ -143,14 +144,20 @@ class disk_state:
 		latest = self.subscriptions[-1]
 		return latest.raw_cap()
 
-	def uptime_fields(self):
+	def uptime_fields(self, local_host, query_host):
 		yield self.uuid
 		yield uptime_str(self.starttime)
 		yield str(len(self.subscriptions))
-
 		latest = self.subscriptions[-1]
+		yield mb_str(latest.raw_cap() - latest.avail_cap())
 		yield mb_str(latest.raw_cap(), 4)
-		yield mb_str(latest.avail_cap())
+		host = latest.host
+		if host == query_host:
+			yield "127.0.0.1"
+		elif host == "127.0.0.1":
+			yield local_host
+		else:
+			yield host
 
 
 def root_component(path):
@@ -318,10 +325,35 @@ class archive_map:
 		disk.drop_subscriber(subscriber)
 		self.put_disk(uuid)
 
-	def uptime_fields(self, subscription):
-		yield subscription.fs_uuid
+	def disk_lines(self, local_host, query_host):
+		for disk in self.disks:
+			yield '\t'.join(disk.uptime_fields(local_host, query_host))
+
+	def upload_lines(self, local_host, query_host):
+		for da in self.handlers:
+			if da.upload_ready():
+				yield '\t'.join(da.upload_fields(local_host, query_host))
+
+	def segment_lines(self):
+		for da in self.handlers:
+			for seg in da.segments:
+				if seg.segname:
+					yield '\t'.join(seg.uptime_fields())
+
+	def reporter_lines(self):
+		for da in self.handlers:
+			for r in da.data_peers:
+				if r.role != "Subscriber":
+					yield '\t'.join(r.reporter_fields(da.peer_uuid))
+
+	def accumulator_lines(self, local_host, query_host):
+		for da in self.handlers:
+			yield '\t'.join(da.accumulator_fields(local_host, query_host))
+
+	def uptime_fields(self, fs_uuid, repl, min_repl):
+		yield fs_uuid
 		yield uptime_str(self.starttime)
-		yield "%s/%sx" % (subscription.replication_factor(), subscription.min_repl)
+		yield "%s/%sx" % (repl, min_repl)
 		yield "%14d" % sum(ar.bytes_done for ar in self.handlers)
 		yield str(sum(ar.segments_done for ar in self.handlers))
 
@@ -571,20 +603,17 @@ class subscription_queue(list):
 		list.__init__(self)
 
 		self.min_repl = minimum_replication_factor
-		self.info_msg = ''
 
 		self.fd_pool = [file_descriptor(ch) for ch in range(2, 255)]
 		self.fd_active = []
-
 		self.pub_queue = []
-
 		self.ack_cookies = iter(xrange(2, 2**30))
 		self.ack_junction = {}
 
 		self.fs_uuid = ''
 		self.fs_name = ''
 		self.fs_path_max = 0
-
+		self.info_msg = ''
 		self.starttime = datetime.now()
 
 	def replication_factor(self):
@@ -603,7 +632,6 @@ class subscription_queue(list):
 			fs_name, "File System Name", \
 			str(fs_path_max), "Path Max", \
 			str(self.min_repl), "Minimum Replication Factor", )
-
 		self.info_msg = ctl_msg(*info)
 
 	def stat_seq_fields(self):
@@ -617,7 +645,6 @@ class subscription_queue(list):
 	def resolve_ack(self, cookie, handler):
 		if cookie not in self.ack_junction:
 			raise RuntimeError("ack unknown ... receiver canceled?")
-
 		receiver, incomplete = self.ack_junction[cookie]
 		if handler not in incomplete:
 			raise RuntimeError("ack from unxepected handler %s, needed %s" % (repr(handler), repr(incomplete)))
@@ -625,14 +652,12 @@ class subscription_queue(list):
 		incomplete.remove(handler)
 		if incomplete:
 			return
-
 		self.ack_junction.pop(cookie)
 		receiver.done_ack()
 
 	def add_ack_receiver(self, cookie, publisher):
 		if cookie in self.ack_junction:
 			receiver, targets = self.ack_junction[cookie]
-
 			assert publisher is receiver
 			targets.extend(self)
 		else:
@@ -673,11 +698,9 @@ class subscription_queue(list):
 	def try_to_publish(self):
 		if not self.pub_queue or self.replication_factor() < self.min_repl:
 			return
-			
 		for subscriber in self:
 			if subscriber.writable():
 				return
-
 		publisher = self.pub_queue.pop(0)
 		issue = publisher.publish_content()
 
@@ -694,7 +717,6 @@ class subscription_queue(list):
 		for s in self:
 			if subscriber.peer_uuid == s.peer_uuid:
 				raise RuntimeError("Disk already subscribed")
-
 		self.append(subscriber)
 		for fd in self.fd_active:
 			yield fd.provision()
@@ -703,6 +725,15 @@ class subscription_queue(list):
 	def unsubscribe(self, subscriber):
 		self.remove(subscriber)
 		self.try_to_publish()
+
+	def subscriber_lines(self):
+		for s in self:
+			yield '\t'.join(s.subscriber_fields())
+
+	def provider_lines(self):
+		for s in self:
+			if s.peer_status["Provider"]:
+				yield '\t'.join(s.subscriber_fields())
 
 	def archive_fields(self):
 		yield "v0"
@@ -736,7 +767,6 @@ class accumulator_queue(subscription_queue):
 			str(self.segment_length), "Segment Length", \
 			str(self.segment_width), "Maximum Concurrent Segments", \
 			str(self.min_repl), "Minimum Replication Factor", )
-
 		self.info_msg = ctl_msg(*info)
 
 	def stat_seq_fields(self):
@@ -758,7 +788,6 @@ class msg_handler(asyncore.dispatcher_with_send):
 		self.peer_role = ''
 		self.peer_uuid = ''
 		self.peer_info = {}
-
 		self.head_bytes = ''
 		self.bytes_expected = None
 		self.chunks = []
@@ -780,19 +809,16 @@ class msg_handler(asyncore.dispatcher_with_send):
 		seq = [s for s in self.unpack_seq()]
 		if len(seq) < 3:
 			self.protocol_error("Info: invalid text %r" % seq)
-
 		head, body = seq[:3], seq[3:]
 		if head[2] != "Info" or not head[1]:
 			self.protocol_error("Info: incomplete header %r" % head)
 		if len(body) % 2:
 			self.protocol_error("Info: unidentified value %s" % pairs[-1])
-
 		self.peer_role, self.peer_uuid = head[1], head[0]
 		while body:
 			self.peer_info[body.pop(0)] = body.pop(0)
 
 		self.got_info()
-
 		if CTL in self.handlers:
 			try:
 				self.handlers[CTL](self)
@@ -804,18 +830,15 @@ class msg_handler(asyncore.dispatcher_with_send):
 		if call_id not in msg_format:
 			self.protocol_error("unknown msg ID - %d" % call_id)
 		fmt = msg_format[call_id]
-
 		head = self.chomp(struct.calcsize(fmt))
 		if not self.peer_role:
 			if call_id != CTL:
 				self.protocol_error("call_id %r instead of CTL Info" % call_id)
 			self.recv_info()
 			return
-
 		args = struct.unpack(fmt, head)[1:]
 		if call_id not in self.handlers:
 			self.protocol_error("unhandled msg ID %d - %r" % (call_id, args))
-
 		try:
 			self.handlers[call_id](self, *args)
 		except Exception, err:
@@ -828,25 +851,21 @@ class msg_handler(asyncore.dispatcher_with_send):
 		self.head_bytes += self.recv(len(HANDSHAKE) - len(self.head_bytes))
 		if len(self.head_bytes) < len(HANDSHAKE):
 			return
-
 		try:
 			rev, flags = verify_handshake(self.head_bytes)
 		except RuntimeError, err:
 			self.protocol_error(err)
-
 		self.head_bytes = ''
 		self.bytes_expected = 0
 
 		self.got_handshake()
 
 	def do_chomp(self, chunks, bytes):
-		if not bytes:
-			return ''
+		assert bytes
 		soup = []
 		while bytes and len(chunks[0]) <= bytes:
 			bytes -= len(chunks[0])
 			soup.append(chunks.pop(0))
-
 		if bytes:
 			chunk = chunks[0]
 			a, chunks[0] = chunk[:bytes], chunk[bytes:]
@@ -945,16 +964,13 @@ class http_handler(asyncore.dispatcher_with_send, BaseHTTPRequestHandler):
 
 		self.remote_host = host
 		self.remote_port = port
-
 		self.bytes = ''
 
 	def reply_content(self, http, content):
 		type = "plain"
 		if content.startswith("<html>"):
 			type = "html"
-
 		header = http_header % (type, len(content), utils.formatdate(usegmt=True))
-
 		self.out_buffer = ''.join([http, header, content])
 
 	def reply_OK(self, content):
@@ -963,44 +979,19 @@ class http_handler(asyncore.dispatcher_with_send, BaseHTTPRequestHandler):
 	def reply_lines(self, lines):
 		self.reply_OK("\r\n".join([line for line in lines] + ['', '']))
 
-	def ar_router(self):
-		query = self.path[1:]
-		if '/' not in query:
-			return self.reply_OK("404\r\n")
-		dir, uuid = query.split('/')
-		if not dir:
-			return self.reply_OK("redirect %s\r\n" % uuid)
-		if not uuid:
-			return self.reply_OK("%s list uuids\r\n" % dir)
-		if dir not in self.ar_handlers.keys():
-			return self.reply_OK("404\r\n")
-
-		self.ar_handlers[dir](self, uuid)
-
 	def handle_connect(self):
 		pass
 
 	def handle_read(self):
 		self.bytes += self.recv(4096)
-
 		if not self.bytes.endswith("\r\n\r\n"):
 			return
-
 		self.rfile = StringIO(self.bytes)
 		self.rfile.seek(0)
 		self.raw_requestline = self.rfile.readline()
-
 		self.parse_request()
 
-		if self.path in self.URLs:
-			return self.URLs[self.path](self)
-
-		for url in self.URLs:
-			if self.path.startswith(url):
-				return self.URLs[url](self)
-
-		print "%s not found" % self.path
-		self.reply_content("HTTP/1.1 404 Not Found\r\n", http_404 % self.path)
+		self.http_request()
 
 	def handle_write(self):
 		asyncore.dispatcher_with_send.handle_write(self)
