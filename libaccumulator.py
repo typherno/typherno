@@ -105,8 +105,15 @@ class connection_state:
 			return 0
 		return int(self.status["Available Capacity"])
 
-	def reporter_fields(self, da):
-		yield "%s:%s" % (self.host, self.port)
+	def relative_local_host(self, local_host, query_host):
+		if self.host == query_host:
+			return "127.0.0.1"
+		if self.host == "127.0.0.1":
+			return local_host
+		return self.host
+
+	def reporter_fields(self, local_host, query_host, da):
+		yield "%s:%s" % (self.relative_local_host(local_host, query_host), self.port)
 		yield uptime_str(self.starttime)
 		yield da
 		if self.role:
@@ -340,11 +347,11 @@ class archive_map:
 				if seg.segname:
 					yield '\t'.join(seg.uptime_fields())
 
-	def reporter_lines(self):
+	def reporter_lines(self, local_host, query_host):
 		for da in self.handlers:
 			for r in da.data_peers:
 				if r.role != "Subscriber":
-					yield '\t'.join(r.reporter_fields(da.peer_uuid))
+					yield '\t'.join(r.reporter_fields(local_host, query_host, da.peer_uuid))
 
 	def accumulator_lines(self, local_host, query_host):
 		for da in self.handlers:
@@ -861,7 +868,8 @@ class msg_handler(asyncore.dispatcher_with_send):
 		self.got_handshake()
 
 	def do_chomp(self, chunks, bytes):
-		assert bytes
+		if not bytes:
+			return ''
 		soup = []
 		while bytes and len(chunks[0]) <= bytes:
 			bytes -= len(chunks[0])

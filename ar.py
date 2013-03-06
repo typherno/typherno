@@ -498,7 +498,8 @@ class tracker_status_handler(http_handler):
 		self.reply_lines(tracker.segment_lines())
 
 	def reporters(self):
-		self.reply_lines(tracker.reporter_lines())
+		local_host = self.getsockname()[0]
+		self.reply_lines(tracker.reporter_lines(local_host, self.remote_host))
 
 	def disks(self):
 		local_host = self.getsockname()[0]
@@ -532,7 +533,7 @@ class tracker_status_handler(http_handler):
 		for h in tracker.handlers:
 			if h.peer_uuid == uuid:
 				return self.reply_lines(h.subscriber_lines())
-		self.reply_OK("No such accumulator %s" % uuid)
+		self.reply_OK("No such accumulator %s\r\n" % uuid)
 
 	def http_request(self):
 		if self.path in self.URLs:
@@ -548,17 +549,18 @@ class tracker_status_handler(http_handler):
 		self.reply_content("HTTP/1.1 404 Not Found\r\n", http_404 % self.path)
 
 	def status_lines(self):
+		local_host = self.getsockname()[0]
 		yield "--- Accumulators ---"
 		for l in self.accumulator_lines():
 			yield l
 		yield "\r\n--- Disks ---"
-		for l in tracker.disk_lines():
+		for l in tracker.disk_lines(local_host, self.remote_host):
 			yield l
 		yield "\r\n--- Segments ---"
 		for l in tracker.segment_lines():
 			yield l
 		yield "\r\n--- Reporters ---"
-		for l in tracker.reporter_lines():
+		for l in tracker.reporter_lines(local_host, self.remote_host):
 			yield l
 
 	def accumulator_lines(self):
