@@ -519,13 +519,13 @@ class tracker_status_handler(http_handler):
 		self.reply_lines(self.status_lines())
 
 	URLs = { \
-		"/Segments":		segments, \
-		"/Reporters":		reporters, \
-		"/Disks":		disks, \
-		"/Upload":		upload, \
-		"/Accumulators":	accumulators, \
-		"/Providers":		providers, \
-		"/Status":		status, }
+		"/segments":		segments, \
+		"/reporters":		reporters, \
+		"/disks":		disks, \
+		"/upload":		upload, \
+		"/accumulators":	accumulators, \
+		"/providers":		providers, \
+		"/status":		status, }
 
 	def subscribers(self, uuid):
 		if not uuid or uuid == subscription.fs_uuid:
@@ -536,12 +536,13 @@ class tracker_status_handler(http_handler):
 		self.reply_OK("No such accumulator %s\r\n" % uuid)
 
 	def http_request(self):
-		if self.path in self.URLs:
-			return self.URLs[self.path](self)
-		if self.path == '/':
+		reqpath = self.path.lower()
+		if reqpath in self.URLs:
+			return self.URLs[reqpath](self)
+		if reqpath == '/':
 			return self.status()
-		if self.path.startswith("/Subscribers"):
-			query = self.path[1:]
+		if reqpath.startswith("/subscribers"):
+			query = reqpath[1:]
 			if '/' not in query:
 				return self.reply_OK("Use /Subscribers/[accumulator_uuid]\r\n")
 			dir, uuid = query.split('/')
