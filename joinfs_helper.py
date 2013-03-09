@@ -21,19 +21,22 @@ import sys
 from typherno_common import page_opener
 
 
-def subscriber_line(line):
-	hostport = line[-1]
-	if ':' in hostport:
-		return hostport
-	else:
-		return "%s:9825" % host
-
-
 def already_subscribed(disk, ar):
 	for line in page_opener(host, 4352, "Subscribers/%s" % ar):
 		if line.split('\t')[0] == disk:
 			return True
 	return False
+
+
+def new_accumulators(disk, tracker):
+	for entry in page_opener(tracker, 4352, "Accumulators"):
+		line = entry.split('\t')
+		if line[5] == "0/0" and not already_subscribed(disk, line[0]):
+			hostport = line[-1]
+			if ':' in hostport:
+				yield hostport
+			else:
+				yield "%s:9825" % tracker
 
 
 host, path = sys.argv[1:3]
@@ -44,9 +47,6 @@ name = os.path.basename(path)
 if not name.startswith("disk-"):
 	sys.stderr.write("No disk found at %s" % path)
 	sys.exit()
-disk = name[5:]
 
-lines = [line.split('\t') for line in page_opener(host, 4352, "Accumulators")]
-arlist = [subscriber_line(line) for line in lines if line[5] == "0/0" and not already_subscribed(disk, line[0])]
-sys.stdout.write(''.join(["%s %s\n" % (ar, path) for ar in arlist]))
+sys.stdout.write(''.join(["%s %s\n" % (ar, path) for ar in new_accumulators(name[5:], host)]))
 
