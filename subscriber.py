@@ -51,8 +51,11 @@ class subscriber_socket(libmsg.msg_socket):
 		self._print("Connected to %s:%d at %s" % (self.getpeername() + (t,)))
 
 	def handle_connect(self):
-		self.path = os.path.join(self.path, "ar-%s" % self.peer_info["File System"])
 		cap = self.raw_cap
+		self.path = os.path.join(self.path, "ar-%s" % self.peer_info["File System"])
+		if not os.path.exists(self.path):
+			self._print("Creating archive folder %s" % self.path)
+			os.mkdir(self.path)
 
 		self._print("Subcribing: %s capacity" % mb_str(cap))
 		self.send(ctl_msg(self.uuid, self.role, "Info", str(cap), "Raw Capacity"))

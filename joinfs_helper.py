@@ -20,15 +20,6 @@ import sys
 
 from typherno_common import page_opener
 
-def mkdisk(path, fsname):
-	fspath = os.path.join(path, fsname)
-	if not os.path.exists(fspath):
-		os.mkdir(fspath)
-
-	recpath = os.path.join(path, fsname, "archive.tsv")
-	if not os.path.exists(recpath):
-		open(recpath, 'a').close()
-
 
 def subscriber_line(line):
 	hostport = line[-1]
@@ -56,8 +47,6 @@ if not name.startswith("disk-"):
 disk = name[5:]
 
 lines = [line.split('\t') for line in page_opener(host, 4352, "Accumulators")]
-mkdisk(path, "ar-%s" % lines[0][0])
-
 arlist = [subscriber_line(line) for line in lines if line[5] == "0/0" and not already_subscribed(disk, line[0])]
 sys.stdout.write(''.join(["%s %s\n" % (ar, path) for ar in arlist]))
 
