@@ -293,7 +293,7 @@ class metadata_publisher(subscriber_handler):
 		yield ''
 
 
-def empty_head(seg, piece_length):
+def empty_seginfo(seg, piece_length):
 	yield " - typherno archive -"
 	yield '/'.join(seg.archive_fields())
 	yield "(%s)" % time_stamp()
@@ -307,7 +307,7 @@ def fs_abort_all(prior, segments, piece_length):
 			yield m
 	for seg in segments:
 		if seg.connection:
-			body = '\n'.join(empty_head(seg, piece_length))
+			body = '\n'.join(empty_seginfo(seg, piece_length))
 			for m in seg.retire(body):
 				yield m
 
