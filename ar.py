@@ -268,7 +268,7 @@ class metadata_publisher(subscriber_handler):
 		yield '/'.join(subscription.archive_fields())
 		yield "(%s)" % time_stamp()
 		yield "piece-length: %d" % FS_PIECE_LENGTH
-		yield "path-max: %d" % FS_PATH_MAX
+		yield "path-max: %d" % subscription.fs_path_max
 		yield "software-version: 1.2-pre0"
 		yield ''
 		yield ''
@@ -438,6 +438,8 @@ class metadata_handler(metadata_publisher):
 		modepath = self.gobble()
 		if len(modepath) > subscription.fs_path_max:
 			raise RuntimeError("Entry: path too long")
+		if '\0' in modepath or '\n' in modepath or '\t' in modepath:
+			raise RuntimeError("Entry: illegal character in path")
 		if modepath.startswith('.'):
 			raise RuntimeError("Entry: illegal relative path name")
 
@@ -872,6 +874,12 @@ class accumulator_handler(publisher_handler):
 	def entry(self, ch):
 		sd = self.channel_map[ch]
 		modepath = self.gobble()
+		if len(modepath) > subscription.fs_path_max:
+			sd.log("(%s) %s byte path too long, dropping reporter" % (sd.mapname, len(modepath)))
+			return self.handle_close()
+		if '\0' in modepath or '\n' in modepath or '\t' in modepath:
+			sd.log("(%s) illegal character in pathname, dropping reporter" % (sd.mapname))
+			return self.handle_close()
 		self.next_issue(sd.entry(modepath))
 
 	def attribute(self, ch, attrs):
