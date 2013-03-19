@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2012, 2013 Nate Diller.
+# Copyright (c) 2013 Nate Diller.
 # All rights reserved.
 # This component and the accompanying materials are made available
 # under the terms of the "Eclipse Public License v1.0"
@@ -26,9 +26,10 @@ class disk_archives(dict):
 		self.diskpath = diskpath
 		for name in os.listdir(diskpath):
 			if name.startswith("ar-"):
-				self[name] = tuple(self.read_super(name))
+				self[name] = self.read_super(name)
 
 	def read_super(self, ar):
+		ret = ()
 		super = os.path.join(self.diskpath, ar, "archive-super.tsv")
 		if os.path.isfile(super):
 			f = open(super)
@@ -37,9 +38,11 @@ class disk_archives(dict):
 				id = f.readline()
 				if id.startswith("v0/"):
 					id = id[3:]
-				yield id.split('/')[0]
-				yield f.readline().strip("()\n")
+				fs = id.split('/')[0]
+				ctime = f.readline().strip("()\n")
+				ret = (fs, ctime)
 			f.close()
+		return ret
 
 	def bin_segments(self, ar):
 		for name in os.listdir(os.path.join(self.diskpath, ar)):
