@@ -18,6 +18,8 @@
 import os
 import sys
 
+from typherno_common import mb_str
+
 
 class disk_archives(dict):
 	def __init__(self, diskpath):
@@ -47,7 +49,7 @@ class disk_archives(dict):
 	def bin_segments(self, ar):
 		for name in os.listdir(os.path.join(self.diskpath, ar)):
 			if name.endswith(".bin") and not name.endswith("-pieces.bin"):
-				yield name
+				yield os.path.join(self.diskpath, ar, name)
 
 	def ar_unknown(self):
 		for ar in self.keys():
@@ -65,6 +67,9 @@ class disk_archives(dict):
 		ars.sort(key=lambda x: x[1])
 		ars.reverse()
 		return ars
+
+	def ordered_ar(self, fs):
+		return [x[0] for x in self.fs_listing(fs)]
 
 	def ar_listing(self):
 		d = {}
@@ -88,7 +93,12 @@ if __name__ == "__main__":
 		for fsname in sys.argv[2:]:
 			print "--- %s ---" % fsname
 			for info in disk.fs_listing(fsname):
-				print "  %s\t%s" % info, '.' * len(tuple(disk.bin_segments(info[0])))
+				bytes = 0
+				segs = 0
+				for s in disk.bin_segments(info[0]):
+					bytes += os.path.getsize(s)
+					segs += 1
+				print "  %s\t%s" % info, "%6s" % mb_str(bytes, 1), '\t', '.' * segs
 		print ''
 		sys.exit()
 
@@ -97,12 +107,22 @@ if __name__ == "__main__":
 	for fs in d.keys():
 		print fs
 		for info in d[fs]:
-			print "  %s\t%s" % info, '.' * len(tuple(disk.bin_segments(info[0])))
+			bytes = 0
+			segs = 0
+			for s in disk.bin_segments(info[0]):
+				bytes += os.path.getsize(s)
+				segs += 1
+			print "  %s\t%s" % info, "%6s" % mb_str(bytes, 1), '\t', '.' * segs
 	unknown = tuple(disk.ar_unknown())
 	if unknown:
 		print "<unknown>"
 		for ar in unknown:
-			print "  %s" % ar, '.' * len(tuple(disk.bin_segments(ar)))
+			bytes = 0
+			segs = 0
+			for s in disk.bin_segments(ar):
+				bytes += os.path.getsize(s)
+				segs += 1
+			print "  %s" % ar, "%6s" % mb_str(bytes, 1), '\t', '.' * segs
 	print ''
 
 
